@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>資產儀表板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --ink:#0D141C;
+    --surface:#161F2B;
+    --surface-raised:#1C2733;
+    --hairline:#28333F;
+    --text:#EDF1F5;
+    --muted:#8B98A8;
+    --gold:#D9A94E;
+    --gain:#4FD69C;
+    --loss:#FF6B6B;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--text);
+    font-family:'Inter','Noto Sans TC',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:88px;
+  }
+  .mono{font-family:'IBM Plex Mono','Noto Sans TC',monospace; font-variant-numeric:tabular-nums;}
+  .display{font-family:'Space Grotesk','Noto Sans TC',sans-serif;}
+
+  .wrap{max-width:520px; margin:0 auto; padding:0 18px;}
+
+  .page{display:none;}
+  .page.active{display:block;}
+
+  header.hero{padding:26px 0 8px;}
+  .eyebrow{
+    font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 6px;
+  }
+  .total-value{font-size:42px; font-weight:600; margin:0; line-height:1.05;}
+  .total-value-secondary{font-size:15px; color:var(--muted); margin-top:4px;}
+  .delta-chip{
+    display:inline-flex; align-items:center; gap:4px;
+    margin-top:10px; padding:4px 10px; border-radius:999px;
+    font-size:13px; font-weight:600;
+  }
+  .delta-chip.up{background:rgba(79,214,156,0.14); color:var(--gain);}
+  .delta-chip.down{background:rgba(255,107,107,0.14); color:var(--loss);}
+
+  .year-chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+  .year-chip{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border-radius:999px;
+    background:var(--surface-raised); border:1px solid var(--hairline); color:var(--muted);
+  }
+  .year-chip.up{color:var(--gain); border-color:rgba(79,214,156,0.3);}
+  .year-chip.down{color:var(--loss); border-color:rgba(255,107,107,0.3);}
+
+  .alloc-date-select{
+    width:100%; background:var(--ink); border:1px solid var(--hairline); border-radius:8px;
+    padding:9px 10px; color:var(--text); font-size:12.5px; font-family:'Inter','Noto Sans TC',sans-serif;
+    margin-bottom:14px;
+  }
+
+  .stat-row{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin:22px 0 8px;}
+  .stat-card{background:var(--surface); border:1px solid var(--hairline); border-radius:14px; padding:14px 12px;}
+  .stat-card .label{font-size:11px; color:var(--muted); margin-bottom:6px;}
+  .stat-card .value{font-size:16px; font-weight:600;}
+  .stat-card .value-sub{font-size:10.5px; color:var(--muted); margin-top:3px;}
+
+  section{margin-top:32px;}
+  .section-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px;}
+  .section-title{font-size:15px; font-weight:600; letter-spacing:.02em;}
+  .section-sub{font-size:12px; color:var(--muted);}
+
+  .chart-card{background:var(--surface); border:1px solid var(--hairline); border-radius:16px; padding:18px; position:relative;}
+
+  .segmented{display:flex; background:var(--ink); border:1px solid var(--hairline); border-radius:10px; padding:3px; margin-bottom:16px;}
+  .segmented button{
+    flex:1; background:transparent; border:none; color:var(--muted); padding:8px 0;
+    font-size:12.5px; font-weight:600; border-radius:8px; cursor:pointer; font-family:'Inter','Noto Sans TC',sans-serif;
+  }
+  .segmented button.active{background:var(--surface-raised); color:var(--text);}
+
+  .legend-row{display:flex; align-items:center; padding:9px 0; border-bottom:1px solid var(--hairline);}
+  .legend-row:last-child{border-bottom:none;}
+  .legend-dot{width:9px; height:9px; border-radius:50%; margin-right:10px; flex-shrink:0;}
+  .legend-label{flex:1; font-size:13px;}
+  .legend-pct{font-size:13px; font-weight:600; margin-right:10px;}
+  .legend-val{font-size:11.5px; color:var(--muted); text-align:right; line-height:1.5;}
+
+  .holding-row{display:flex; justify-content:space-between; align-items:center; padding:14px 4px; border-bottom:1px solid var(--hairline);}
+  .holding-row:last-child{border-bottom:none;}
+  .h-left .sym-row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
+  .h-left .sym{font-weight:600; font-size:15px;}
+  .badge-nature{
+    font-size:10px; padding:2px 7px; border-radius:5px; background:var(--surface-raised);
+    color:var(--muted); border:1px solid var(--hairline); font-weight:600; letter-spacing:.02em;
+  }
+  .badge-region{
+    font-size:10px; padding:2px 7px; border-radius:5px; background:rgba(217,169,78,0.12);
+    color:var(--gold); border:1px solid rgba(217,169,78,0.3); font-weight:600; letter-spacing:.02em;
+  }
+  .badge-interest{
+    font-size:10px; padding:2px 7px; border-radius:5px; background:rgba(107,165,255,0.12);
+    color:#6BA5FF; border:1px solid rgba(107,165,255,0.3); font-weight:600; letter-spacing:.02em;
+  }
+  .h-left .sub{font-size:12px; color:var(--muted); margin-top:3px;}
+  .h-right{text-align:right;}
+  .h-right .val{font-size:14px; font-weight:600;}
+  .h-right .val-sub{font-size:11px; color:var(--muted); margin-top:1px;}
+  .h-right .pct{font-size:12px; margin-top:2px;}
+  .pct.up{color:var(--gain);} .pct.down{color:var(--loss);}
+
+  /* transactions page */
+  .filter-chips{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:18px;}
+  .filter-chip{
+    flex-shrink:0; padding:7px 14px; border-radius:999px; border:1px solid var(--hairline);
+    background:var(--surface); color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .filter-chip.active{background:var(--gold); color:#221807; border-color:var(--gold);}
+
+  .tx-row{padding:13px 4px; border-bottom:1px solid var(--hairline); display:flex; justify-content:space-between; align-items:center;}
+  .tx-row:last-child{border-bottom:none;}
+  .tx-left{display:flex; flex-direction:column; gap:4px;}
+  .tx-top{display:flex; align-items:center; gap:8px;}
+  .tx-sym{font-weight:600; font-size:14.5px;}
+  .tx-badge{font-size:10px; font-weight:700; padding:2px 7px; border-radius:5px; letter-spacing:.03em;}
+  .tx-badge.buy{background:rgba(79,214,156,0.14); color:var(--gain);}
+  .tx-badge.sell{background:rgba(255,107,107,0.14); color:var(--loss);}
+  .tx-badge.interest{background:rgba(107,165,255,0.14); color:#6BA5FF;}
+  .tx-badge.call{background:rgba(79,214,156,0.14); color:var(--gain);}
+  .tx-badge.put{background:rgba(255,107,107,0.14); color:var(--loss);}
+  .tx-badge.deposit{background:rgba(79,214,156,0.14); color:var(--gain);}
+  .tx-badge.withdraw{background:rgba(255,107,107,0.14); color:var(--loss);}
+  .tx-meta{font-size:11.5px; color:var(--muted);}
+  .tx-right{text-align:right;}
+  .tx-right .amt{font-size:13.5px; font-weight:600;}
+  .tx-right .qp{font-size:11px; color:var(--muted); margin-top:2px;}
+
+  details.config{margin-top:36px; background:var(--surface); border:1px solid var(--hairline); border-radius:14px; padding:4px 16px;}
+  details.config summary{cursor:pointer; padding:14px 0; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:8px;}
+  .config-body{padding:4px 0 18px;}
+  .config-body label{display:block; font-size:12px; color:var(--muted); margin:12px 0 6px;}
+  .config-body input{
+    width:100%; background:var(--ink); border:1px solid var(--hairline); border-radius:8px;
+    padding:10px 12px; color:var(--text); font-size:13px; font-family:'IBM Plex Mono',monospace;
+  }
+  .config-body .row-btns{display:flex; gap:10px; margin-top:16px;}
+  .btn{flex:1; padding:11px; border-radius:8px; border:none; cursor:pointer; font-size:13px; font-weight:600; font-family:'Inter','Noto Sans TC',sans-serif;}
+  .btn.primary{background:var(--gold); color:#221807;}
+  .btn.ghost{background:transparent; color:var(--muted); border:1px solid var(--hairline);}
+  .hint{font-size:11.5px; color:var(--muted); line-height:1.6; margin-top:10px;}
+  .hint code{background:var(--ink); padding:1px 5px; border-radius:4px;}
+
+  .empty-state{text-align:center; padding:36px 12px; color:var(--muted); font-size:13px; line-height:1.7;}
+  .status-msg{font-size:12px; margin-top:8px;}
+  .status-msg.err{color:var(--loss);}
+  .status-msg.ok{color:var(--gain);}
+
+  /* bottom nav */
+  .bottom-nav{
+    position:fixed; bottom:0; left:0; right:0; background:var(--surface-raised);
+    border-top:1px solid var(--hairline); display:flex; padding:8px 0 calc(8px + env(safe-area-inset-bottom));
+    z-index:10;
+  }
+  .nav-btn{
+    flex:1; background:none; border:none; color:var(--muted); font-size:11.5px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; font-family:'Inter','Noto Sans TC',sans-serif;
+  }
+  .nav-btn.active{color:var(--gold);}
+  .nav-icon{width:20px; height:20px;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ===== PAGE 1: OVERVIEW ===== -->
+  <div class="page active" id="page-overview">
+    <header class="hero">
+      <p class="eyebrow">總資產</p>
+      <p class="total-value mono" id="totalValue">$0.00</p>
+      <p class="total-value-secondary mono" id="totalValueHKD">HK$0.00</p>
+      <span class="delta-chip mono" id="deltaChip"></span>
+      <div class="year-chips" id="yearlyReturns"></div>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="label">投入成本</div>
+        <div class="value mono" id="totalCost">$0</div>
+        <div class="value-sub mono" id="totalCostHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">未實現損益</div>
+        <div class="value mono" id="totalGain">$0</div>
+        <div class="value-sub mono" id="totalGainHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">報酬率</div>
+        <div class="value mono" id="totalGainPct">0%</div>
+        <div class="value-sub" id="rateNote">匯率載入中…</div>
+      </div>
+    </div>
+
+    <div class="stat-row" id="pctRow">
+      <div class="stat-card">
+        <div class="label">投入資金佔比</div>
+        <div class="value mono" id="pctInvestment">0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">股票佔比</div>
+        <div class="value mono" id="pctStocks">0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">ETF 佔比</div>
+        <div class="value mono" id="pctETF">0%</div>
+      </div>
+    </div>
+
+    <section>
+      <div class="section-head">
+        <span class="section-title">資產配置</span>
+        <span class="section-sub" id="holdingCount">0 檔</span>
+      </div>
+      <div class="chart-card">
+        <select class="alloc-date-select" id="allocDateSelect">
+          <option value="__live__">目前(即時)</option>
+        </select>
+        <div class="segmented" id="breakdownTabs">
+          <button data-key="ticker" class="active">個股</button>
+          <button data-key="nature">性質</button>
+          <button data-key="sector">板塊</button>
+          <button data-key="account">帳戶</button>
+        </div>
+        <canvas id="allocChart" height="220"></canvas>
+        <div id="allocLegend" style="margin-top:14px;"></div>
+      </div>
+    </section>
+
+    <section id="growthSection" style="display:none;">
+      <div class="section-head"><span class="section-title">資產成長</span></div>
+      <div class="chart-card"><canvas id="growthChart" height="180"></canvas></div>
+    </section>
+
+    <section>
+      <div class="section-head"><span class="section-title">持股明細</span></div>
+      <div class="chart-card" id="ledger">
+        <div class="empty-state">尚未連接資料。展開下方「連接 Google Sheet」設定你的試算表,或先看示範資料。</div>
+      </div>
+    </section>
+
+    <details class="config" id="configPanel">
+      <summary>⚙ 連接 Google Sheet</summary>
+      <div class="config-body">
+        <label>持股試算表 CSV 網址(必填)</label>
+        <input id="holdingsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>交易紀錄 CSV 網址(選填,用於「交易紀錄」分頁)</label>
+        <input id="transactionsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>資產歷史紀錄 CSV 網址(選填,用來畫成長線圖)</label>
+        <input id="historyUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>期權紀錄 CSV 網址(選填,用於「期權」分頁)</label>
+        <input id="optionsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>入金/出金紀錄 CSV 網址(選填,用於「資金紀錄」分頁)</label>
+        <input id="cashflowUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>資產配置歷史快照 CSV 網址(選填,可回看過去某日的資產配置)</label>
+        <input id="allocSnapshotsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <label>配息/利息收入 CSV 網址(選填,用於「配息」分頁)</label>
+        <input id="dividendsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <div class="row-btns">
+          <button class="btn primary" onclick="connectSheet()">連接並讀取</button>
+          <button class="btn ghost" onclick="loadDemo()">改用示範資料</button>
+        </div>
+        <div class="status-msg" id="statusMsg"></div>
+        <p class="hint">
+          持股表欄位:<code>Ticker</code> 代號、<code>Account</code> 帳戶、<code>Nature</code> 性質(股票/ETF)、<code>Sector</code> 板塊(如科技/金融/消費)、<code>Region</code> 地區(如 US/HK/CN)、<code>Shares</code> 股數、<code>CostPerShare</code> 平均成本、<code>CurrentPrice</code> 目前股價(建議用 <code>=GOOGLEFINANCE(A2)</code> 自動抓)、<code>InterestRate</code> 利率(選填,如債券/貨幣基金,填數字如 4.5)、<code>InterestFrequency</code> 派息頻率(選填,如「每月」「每季」)。<br>
+          交易紀錄欄位:<code>Date</code>、<code>Account</code>、<code>Ticker</code>、<code>Action</code>(Buy/Sell/Interest)、<code>Shares</code>、<code>Price</code>、<code>Fee</code> 手續費(選填)、<code>Interest</code> 利息(選填)。<code>Action</code> 填 Interest 時代表單純的持倉利息扣款,不算買賣。<br>
+          期權紀錄欄位:<code>Date</code>、<code>Account</code>、<code>Ticker</code>、<code>OptionType</code>(Call/Put)、<code>Action</code>(Buy/Sell)、<code>Strike</code>、<code>Expiry</code>、<code>Contracts</code>、<code>Premium</code>(每股權利金,系統會 ×100 股/張計算)、<code>Fee</code>、<code>Interest</code>(選填)。<br>
+          入金/出金欄位:<code>Date</code>、<code>Account</code>、<code>Type</code>(Deposit/Withdrawal)、<code>Amount</code>。<br>
+          資產配置歷史快照欄位:跟持股表一樣,但多一個 <code>Date</code> 欄,每個日期重複記一次全部持股,即可在「資產配置」回看該日的組合。<br>
+          配息/利息收入欄位:<code>Date</code>、<code>Ticker</code>、<code>Account</code>、<code>Cash dividend</code> 股息毛額、<code>NRA tax adj</code> 預扣稅調整(通常是負數)。淨收入 = 毛額 + 稅務調整。<br>
+          金額預設以美元輸入,HKD 為即時匯率換算顯示。發布方式:檔案→共用→發布到網路→選工作表→格式 CSV。
+        </p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ===== PAGE 2: TRANSACTIONS ===== -->
+  <div class="page" id="page-history">
+    <header class="hero">
+      <p class="eyebrow">交易紀錄</p>
+      <p class="total-value display" style="font-size:26px;" id="txCount">0 筆交易</p>
+    </header>
+
+    <div class="filter-chips" id="accountFilters">
+      <button class="filter-chip active" data-account="__all__">全部</button>
+    </div>
+    <div class="filter-chips" id="txYearFilters">
+      <button class="filter-chip active" data-year="__all__">全部年度</button>
+    </div>
+
+    <section style="margin-top:0;">
+      <div class="chart-card" id="txList">
+        <div class="empty-state">尚未連接交易紀錄試算表。到「總覽」分頁展開設定,貼上交易紀錄 CSV 網址。</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== PAGE 3: OPTIONS ===== -->
+  <div class="page" id="page-options">
+    <header class="hero">
+      <p class="eyebrow">期權</p>
+      <p class="total-value display" style="font-size:26px;" id="optCount">0 筆紀錄</p>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="label">權利金支出</div>
+        <div class="value mono" id="optPaid">$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">權利金收入</div>
+        <div class="value mono" id="optReceived">$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">淨額</div>
+        <div class="value mono" id="optNet">$0</div>
+      </div>
+    </div>
+
+    <div class="filter-chips" id="optAccountFilters" style="margin-top:22px;">
+      <button class="filter-chip active" data-account="__all__">全部</button>
+    </div>
+    <div class="filter-chips" id="optYearFilters">
+      <button class="filter-chip active" data-year="__all__">全部年度</button>
+    </div>
+
+    <section style="margin-top:0;">
+      <div class="chart-card" id="optList">
+        <div class="empty-state">尚未連接期權紀錄試算表。到「總覽」分頁展開設定,貼上期權紀錄 CSV 網址。</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== PAGE 4: CASH FLOW ===== -->
+  <div class="page" id="page-cashflow">
+    <header class="hero">
+      <p class="eyebrow">資金紀錄</p>
+      <p class="total-value display" style="font-size:26px;" id="cfCount">0 筆紀錄</p>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="label">總入金</div>
+        <div class="value mono" id="cfIn">$0</div>
+        <div class="value-sub mono" id="cfInHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">總出金</div>
+        <div class="value mono" id="cfOut">$0</div>
+        <div class="value-sub mono" id="cfOutHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">淨入金</div>
+        <div class="value mono" id="cfNet">$0</div>
+        <div class="value-sub mono" id="cfNetHKD">HK$0</div>
+      </div>
+    </div>
+
+    <div class="filter-chips" id="cfAccountFilters" style="margin-top:22px;">
+      <button class="filter-chip active" data-account="__all__">全部</button>
+    </div>
+    <div class="filter-chips" id="cfYearFilters">
+      <button class="filter-chip active" data-year="__all__">全部年度</button>
+    </div>
+
+    <section style="margin-top:0;">
+      <div class="chart-card" id="cfList">
+        <div class="empty-state">尚未連接入金/出金紀錄試算表。到「總覽」分頁展開設定,貼上紀錄 CSV 網址。</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== PAGE 5: DIVIDENDS / INTEREST INCOME ===== -->
+  <div class="page" id="page-dividends">
+    <header class="hero">
+      <p class="eyebrow">配息 / 利息收入</p>
+      <p class="total-value display" style="font-size:26px;" id="divCount">0 筆紀錄</p>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="label">總股息收入</div>
+        <div class="value mono" id="divGross">$0</div>
+        <div class="value-sub mono" id="divGrossHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">總預扣稅</div>
+        <div class="value mono" id="divTax">$0</div>
+        <div class="value-sub mono" id="divTaxHKD">HK$0</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">淨收入</div>
+        <div class="value mono" id="divNet">$0</div>
+        <div class="value-sub mono" id="divNetHKD">HK$0</div>
+      </div>
+    </div>
+
+    <div class="filter-chips" id="divAccountFilters" style="margin-top:22px;">
+      <button class="filter-chip active" data-account="__all__">全部</button>
+    </div>
+    <div class="filter-chips" id="divYearFilters">
+      <button class="filter-chip active" data-year="__all__">全部年度</button>
+    </div>
+
+    <section style="margin-top:0;">
+      <div class="chart-card" id="divList">
+        <div class="empty-state">尚未連接配息/利息收入試算表。到「總覽」分頁展開設定,貼上紀錄 CSV 網址。</div>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<div class="bottom-nav">
+  <button class="nav-btn active" data-page="overview">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+    總覽
+  </button>
+  <button class="nav-btn" data-page="history">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4zM4 10h16v10H4z"/><path d="M8 14h8M8 18h5"/></svg>
+    交易紀錄
+  </button>
+  <button class="nav-btn" data-page="options">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg>
+    期權
+  </button>
+  <button class="nav-btn" data-page="cashflow">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 7L7 17M7 7h10v10"/></svg>
+    資金紀錄
+  </button>
+  <button class="nav-btn" data-page="dividends">
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9 9h.01M15 9h.01M9 15c.5-1 1.8-1.5 3-1.5s2.5.5 3 1.5"/></svg>
+    配息
+  </button>
+</div>
+
+<script>
+let allocChartInstance = null;
+let growthChartInstance = null;
+let USD_HKD = 7.8;
+let currentHoldings = [];
+let currentTransactions = [];
+let currentOptions = [];
+let currentCashflow = [];
+let currentDividends = [];
+let currentBreakdown = 'ticker';
+let allocSnapshotsByDate = {};
+let currentAllocDate = '__live__';
+let txFilter = { account: '__all__', year: '__all__' };
+let optFilter = { account: '__all__', year: '__all__' };
+let cfFilter = { account: '__all__', year: '__all__' };
+let divFilter = { account: '__all__', year: '__all__' };
+
+const fmtUSD = (n) => '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits: 2});
+const fmtHKD = (n) => 'HK$' + Number(n*USD_HKD).toLocaleString('en-US', {maximumFractionDigits: 0});
+const fmtPct = (n) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+const palette = ['#D9A94E','#4FD69C','#6BA5FF','#FF6B6B','#B18CFF','#4FC0D6','#E8895E','#9FD64F'];
+
+function pickCol(row, candidates){
+  const keys = Object.keys(row);
+  for(const c of candidates){
+    const found = keys.find(k => k.trim().toLowerCase() === c);
+    if(found) return row[found];
+  }
+  return undefined;
+}
+
+async function fetchRate(){
+  try{
+    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=HKD');
+    const data = await res.json();
+    if(data && data.rates && data.rates.HKD){
+      USD_HKD = data.rates.HKD;
+      document.getElementById('rateNote').textContent = `1 USD = ${USD_HKD.toFixed(2)} HKD`;
+    }
+  }catch(e){
+    document.getElementById('rateNote').textContent = `匯率離線,暫用 ${USD_HKD}`;
+  }
+}
+
+function normalizeHoldings(rows){
+  return rows.map(r => {
+    const ticker = pickCol(r, ['ticker','symbol','代號','股票代號']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const nature = pickCol(r, ['nature','type','性質','種類']) || '未分類';
+    const region = pickCol(r, ['region','area','market','地區','地域','市場']) || '未分類';
+    const sector = pickCol(r, ['sector','板塊','行業','產業','industry']) || '未分類';
+    const interestRate = parseFloat(pickCol(r, ['interestrate','rate','利率','息率']));
+    const interestFrequency = pickCol(r, ['interestfrequency','frequency','派息頻率','付息頻率']) || '';
+    const shares = parseFloat(pickCol(r, ['shares','qty','quantity','股數']));
+    const cost = parseFloat(pickCol(r, ['costpershare','avgcost','cost','成本','平均成本']));
+    const price = parseFloat(pickCol(r, ['currentprice','price','currprice','現價','目前股價']));
+    if(!ticker || isNaN(shares) || isNaN(price)) return null;
+    const marketValue = shares * price;
+    const totalCost = shares * (isNaN(cost) ? price : cost);
+    const gain = marketValue - totalCost;
+    const gainPct = totalCost ? (gain / totalCost) * 100 : 0;
+    return { ticker: String(ticker).toUpperCase().trim(), account: String(account).trim(), nature: String(nature).trim(), region: String(region).trim(), sector: String(sector).trim(), interestRate: isNaN(interestRate)?null:interestRate, interestFrequency: String(interestFrequency).trim(), shares, cost, price, marketValue, totalCost, gain, gainPct };
+  }).filter(Boolean);
+}
+
+function normalizeTransactions(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const ticker = pickCol(r, ['ticker','symbol','代號']);
+    const action = (pickCol(r, ['action','type','買賣','動作']) || '').toString().trim().toLowerCase();
+    const shares = parseFloat(pickCol(r, ['shares','qty','quantity','股數']));
+    const price = parseFloat(pickCol(r, ['price','價格','成交價']));
+    const fee = parseFloat(pickCol(r, ['fee','手續費','手续费'])) || 0;
+    const interest = parseFloat(pickCol(r, ['interest','利息'])) || 0;
+    if(!date || !ticker || isNaN(shares) || isNaN(price)) return null;
+    const isInterestOnly = action.includes('interest') || action === 'int';
+    const isBuy = action.startsWith('b') || action.includes('買');
+    const total = shares*price;
+    let finalAction, netTotal;
+    if(isInterestOnly){
+      finalAction = 'interest';
+      netTotal = -(fee + interest);
+    } else {
+      finalAction = isBuy ? 'buy' : 'sell';
+      netTotal = isBuy ? total + fee + interest : total - fee - interest;
+    }
+    return { date: String(date).trim(), account: String(account).trim(), ticker: String(ticker).toUpperCase().trim(), action: finalAction, shares, price, fee, interest, total, netTotal };
+  }).filter(Boolean);
+}
+
+function normalizeHistory(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const value = parseFloat(pickCol(r, ['totalvalue','value','總資產','資產']));
+    if(!date || isNaN(value)) return null;
+    return { date, value };
+  }).filter(Boolean);
+}
+
+function normalizeOptions(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const ticker = pickCol(r, ['ticker','symbol','代號']);
+    const optType = (pickCol(r, ['optiontype','type','call/put','種類']) || '').toString().trim().toLowerCase();
+    const action = (pickCol(r, ['action','買賣','動作']) || '').toString().trim().toLowerCase();
+    const strike = parseFloat(pickCol(r, ['strike','行使價']));
+    const expiry = pickCol(r, ['expiry','到期日']) || '';
+    const contracts = parseFloat(pickCol(r, ['contracts','張數','口數']));
+    const premium = parseFloat(pickCol(r, ['premium','權利金']));
+    const fee = parseFloat(pickCol(r, ['fee','手續費','手续费'])) || 0;
+    const interest = parseFloat(pickCol(r, ['interest','利息'])) || 0;
+    if(!date || !ticker || isNaN(contracts) || isNaN(premium)) return null;
+    const isCall = optType.startsWith('c') || optType.includes('認購');
+    const isBuy = action.startsWith('b') || action.includes('買');
+    const total = contracts * premium * 100;
+    const netTotal = isBuy ? total + fee + interest : total - fee - interest;
+    return { date:String(date).trim(), account:String(account).trim(), ticker:String(ticker).toUpperCase().trim(), optType: isCall?'call':'put', action: isBuy?'buy':'sell', strike, expiry:String(expiry).trim(), contracts, premium, fee, interest, total, netTotal };
+  }).filter(Boolean);
+}
+
+function normalizeInterestIncome(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const ticker = pickCol(r, ['ticker','symbol','代號']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const gross = parseFloat(pickCol(r, ['cash dividend','dividend','股息','配息','gross']));
+    const taxAdjRaw = pickCol(r, ['nra tax adj','tax adj','withholding tax','稅','預扣稅','tax']);
+    const taxAdj = parseFloat(taxAdjRaw);
+    if(!date || !ticker || isNaN(gross)) return null;
+    const tax = isNaN(taxAdj) ? 0 : taxAdj; // 通常已經是負數
+    const net = gross + tax;
+    return { date: String(date).trim(), ticker: String(ticker).toUpperCase().trim(), account: String(account).trim(), gross, tax, net };
+  }).filter(Boolean);
+}
+
+function normalizeAllocSnapshots(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const ticker = pickCol(r, ['ticker','symbol','代號']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const nature = pickCol(r, ['nature','type','性質','種類']) || '未分類';
+    const region = pickCol(r, ['region','area','market','地區','地域','市場']) || '未分類';
+    const sector = pickCol(r, ['sector','板塊','行業','產業','industry']) || '未分類';
+    const shares = parseFloat(pickCol(r, ['shares','qty','quantity','股數']));
+    const price = parseFloat(pickCol(r, ['price','currentprice','現價','目前股價']));
+    if(!date || !ticker || isNaN(shares) || isNaN(price)) return null;
+    return { date:String(date).trim(), ticker:String(ticker).toUpperCase().trim(), account:String(account).trim(), nature:String(nature).trim(), region:String(region).trim(), sector:String(sector).trim(), shares, price, marketValue: shares*price };
+  }).filter(Boolean);
+}
+
+function normalizeCashflow(rows){
+  return rows.map(r => {
+    const date = pickCol(r, ['date','日期']);
+    const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
+    const type = (pickCol(r, ['type','類型','種類']) || '').toString().trim().toLowerCase();
+    const amount = parseFloat(pickCol(r, ['amount','金額']));
+    if(!date || isNaN(amount)) return null;
+    const isDeposit = type.startsWith('d') || type.includes('入');
+    return { date:String(date).trim(), account:String(account).trim(), type: isDeposit?'deposit':'withdraw', amount };
+  }).filter(Boolean);
+}
+
+function groupHoldings(holdings, key){
+  const map = {};
+  holdings.forEach(h => {
+    const k = h[key];
+    map[k] = (map[k] || 0) + h.marketValue;
+  });
+  const total = Object.values(map).reduce((a,b)=>a+b,0);
+  return Object.entries(map)
+    .map(([label, value]) => ({ label, value, pct: total ? (value/total)*100 : 0 }))
+    .sort((a,b)=>b.value-a.value);
+}
+
+function renderAllocation(){
+  const source = currentAllocDate === '__live__' ? currentHoldings : (allocSnapshotsByDate[currentAllocDate] || []);
+  const groups = groupHoldings(source, currentBreakdown);
+  const ctx = document.getElementById('allocChart');
+  if(allocChartInstance) allocChartInstance.destroy();
+  allocChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: groups.map(g=>g.label),
+      datasets: [{ data: groups.map(g=>g.value), backgroundColor: groups.map((_,i)=>palette[i % palette.length]), borderColor:'#161F2B', borderWidth:2 }]
+    },
+    options: { cutout:'68%', plugins:{ legend:{ display:false } } }
+  });
+  document.getElementById('allocLegend').innerHTML = groups.map((g,i) => {
+    let subLabel = '';
+    if(currentBreakdown === 'ticker'){
+      const h = source.find(x=>x.ticker === g.label);
+      if(h) subLabel = ` · ${h.region}`;
+    }
+    return `
+    <div class="legend-row">
+      <span class="legend-dot" style="background:${palette[i % palette.length]}"></span>
+      <span class="legend-label">${g.label}${subLabel}</span>
+      <span class="legend-pct">${g.pct.toFixed(1)}%</span>
+      <span class="legend-val mono">${fmtUSD(g.value)}<br>${fmtHKD(g.value)}</span>
+    </div>`;
+  }).join('');
+}
+
+function populateAllocDateSelect(snapshots){
+  allocSnapshotsByDate = {};
+  snapshots.forEach(s => {
+    if(!allocSnapshotsByDate[s.date]) allocSnapshotsByDate[s.date] = [];
+    allocSnapshotsByDate[s.date].push(s);
+  });
+  const dates = Object.keys(allocSnapshotsByDate).sort().reverse();
+  const select = document.getElementById('allocDateSelect');
+  select.innerHTML = '<option value="__live__">目前(即時)</option>' + dates.map(d => `<option value="${d}">${d}</option>`).join('');
+  currentAllocDate = '__live__';
+  select.value = '__live__';
+}
+
+function computeYearlyReturns(history){
+  const byYear = {};
+  history.forEach(h => {
+    const year = String(h.date).slice(0,4);
+    if(!byYear[year]) byYear[year] = [];
+    byYear[year].push(h.value);
+  });
+  return Object.keys(byYear).sort().map(year => {
+    const vals = byYear[year];
+    const first = vals[0], last = vals[vals.length-1];
+    const pct = first ? ((last-first)/first)*100 : 0;
+    return { year, pct };
+  });
+}
+
+function renderYearlyReturns(history){
+  const wrap = document.getElementById('yearlyReturns');
+  if(!history || history.length === 0){ wrap.innerHTML = ''; return; }
+  const yearly = computeYearlyReturns(history);
+  wrap.innerHTML = yearly.map(y => `<span class="year-chip mono ${y.pct>=0?'up':'down'}">${y.year} ${fmtPct(y.pct)}</span>`).join('');
+}
+
+function render(holdings, transactions, history, options, cashflow, allocSnapshots, dividends){
+  currentHoldings = holdings;
+  currentTransactions = transactions;
+  currentOptions = options || [];
+  currentCashflow = cashflow || [];
+  currentDividends = dividends || [];
+  populateAllocDateSelect(allocSnapshots || []);
+
+  const totalValue = holdings.reduce((s,h)=>s+h.marketValue,0);
+  const totalCost = holdings.reduce((s,h)=>s+h.totalCost,0);
+  const totalGain = totalValue - totalCost;
+  const totalGainPct = totalCost ? (totalGain/totalCost)*100 : 0;
+
+  const stockValue = holdings.filter(h=>h.nature.toLowerCase().includes('stock') || h.nature==='股票').reduce((s,h)=>s+h.marketValue,0);
+  const etfValue = holdings.filter(h=>h.nature.toLowerCase().includes('etf')).reduce((s,h)=>s+h.marketValue,0);
+  document.getElementById('pctInvestment').textContent = (totalValue ? (totalCost/totalValue*100) : 0).toFixed(1) + '%';
+  document.getElementById('pctStocks').textContent = (totalValue ? (stockValue/totalValue*100) : 0).toFixed(1) + '%';
+  document.getElementById('pctETF').textContent = (totalValue ? (etfValue/totalValue*100) : 0).toFixed(1) + '%';
+
+  document.getElementById('totalValue').textContent = fmtUSD(totalValue);
+  document.getElementById('totalValueHKD').textContent = fmtHKD(totalValue);
+  document.getElementById('totalCost').textContent = fmtUSD(totalCost);
+  document.getElementById('totalCostHKD').textContent = fmtHKD(totalCost);
+  document.getElementById('totalGain').textContent = (totalGain>=0?'+':'') + fmtUSD(totalGain);
+  document.getElementById('totalGain').style.color = totalGain>=0 ? 'var(--gain)' : 'var(--loss)';
+  document.getElementById('totalGainHKD').textContent = (totalGain>=0?'+':'') + fmtHKD(totalGain);
+  document.getElementById('totalGainPct').textContent = fmtPct(totalGainPct);
+  document.getElementById('totalGainPct').style.color = totalGainPct>=0 ? 'var(--gain)' : 'var(--loss)';
+  document.getElementById('holdingCount').textContent = holdings.length + ' 檔';
+
+  const chip = document.getElementById('deltaChip');
+  chip.className = 'delta-chip mono ' + (totalGain>=0?'up':'down');
+  chip.textContent = (totalGain>=0?'▲ ':'▼ ') + fmtPct(totalGainPct) + ' 全部持有期間';
+
+  renderYearlyReturns(history);
+
+  const ledger = document.getElementById('ledger');
+  if(holdings.length === 0){
+    ledger.innerHTML = '<div class="empty-state">尚未連接資料。展開下方「連接 Google Sheet」設定你的試算表,或先看示範資料。</div>';
+  } else {
+    ledger.innerHTML = holdings.slice().sort((a,b)=>b.marketValue-a.marketValue).map(h => `
+      <div class="holding-row">
+        <div class="h-left">
+          <div class="sym-row"><span class="sym mono">${h.ticker}</span><span class="badge-nature">${h.nature}</span><span class="badge-region">${h.region}</span>${h.interestRate ? `<span class="badge-interest">${h.interestRate}% · ${h.interestFrequency||'未註明頻率'}</span>` : ''}</div>
+          <div class="sub">${h.account} · ${h.shares} 股 · 均價 ${fmtUSD(h.cost||h.price)}</div>
+        </div>
+        <div class="h-right">
+          <div class="val mono">${fmtUSD(h.marketValue)}</div>
+          <div class="val-sub mono">${fmtHKD(h.marketValue)}</div>
+          <div class="pct mono ${h.gainPct>=0?'up':'down'}">${fmtPct(h.gainPct)}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  renderAllocation();
+
+  const growthSection = document.getElementById('growthSection');
+  if(history && history.length > 0){
+    growthSection.style.display = 'block';
+    const gctx = document.getElementById('growthChart');
+    if(growthChartInstance) growthChartInstance.destroy();
+    growthChartInstance = new Chart(gctx, {
+      type: 'line',
+      data: { labels: history.map(h=>h.date), datasets: [{ data: history.map(h=>h.value), borderColor:'#4FD69C', backgroundColor:'rgba(79,214,156,0.08)', fill:true, tension:0.35, pointRadius:0, borderWidth:2 }] },
+      options: { plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#8B98A8',font:{size:10}}, grid:{display:false}}, y:{ticks:{color:'#8B98A8',font:{family:'IBM Plex Mono',size:10}}, grid:{color:'#28333F'}} } }
+    });
+  } else {
+    growthSection.style.display = 'none';
+  }
+
+  renderTransactionsPage(transactions);
+  renderOptionsPage(currentOptions);
+  renderCashflowPage(currentCashflow);
+  renderDividendsPage(currentDividends);
+}
+
+function renderOptionsPage(options){
+  document.getElementById('optCount').textContent = options.length + ' 筆紀錄';
+
+  const paid = options.filter(o=>o.action==='buy').reduce((s,o)=>s+o.netTotal,0);
+  const received = options.filter(o=>o.action==='sell').reduce((s,o)=>s+o.netTotal,0);
+  document.getElementById('optPaid').textContent = fmtUSD(paid);
+  document.getElementById('optReceived').textContent = fmtUSD(received);
+  const net = received - paid;
+  document.getElementById('optNet').textContent = (net>=0?'+':'') + fmtUSD(net);
+  document.getElementById('optNet').style.color = net>=0 ? 'var(--gain)' : 'var(--loss)';
+
+  const accounts = [...new Set(options.map(o=>o.account))];
+  const years = [...new Set(options.map(o=>o.date.slice(0,4)))].sort().reverse();
+  const accWrap = document.getElementById('optAccountFilters');
+  accWrap.innerHTML = `<button class="filter-chip ${optFilter.account==='__all__'?'active':''}" data-account="__all__">全部</button>` +
+    accounts.map(a => `<button class="filter-chip ${a===optFilter.account?'active':''}" data-account="${a}">${a}</button>`).join('');
+  accWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { optFilter.account = btn.dataset.account; renderOptionsPage(options); };
+  });
+  const yearWrap = document.getElementById('optYearFilters');
+  yearWrap.innerHTML = `<button class="filter-chip ${optFilter.year==='__all__'?'active':''}" data-year="__all__">全部年度</button>` +
+    years.map(y => `<button class="filter-chip ${y===optFilter.year?'active':''}" data-year="${y}">${y}</button>`).join('');
+  yearWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { optFilter.year = btn.dataset.year; renderOptionsPage(options); };
+  });
+
+  const filtered = options.filter(o => (optFilter.account==='__all__'||o.account===optFilter.account) && (optFilter.year==='__all__'||o.date.slice(0,4)===optFilter.year));
+  const optList = document.getElementById('optList');
+  if(filtered.length === 0){
+    optList.innerHTML = '<div class="empty-state">尚未連接期權紀錄試算表,或沒有符合篩選條件的紀錄。</div>';
+    return;
+  }
+  optList.innerHTML = filtered.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(o => `
+    <div class="tx-row">
+      <div class="tx-left">
+        <div class="tx-top">
+          <span class="tx-sym mono">${o.ticker}</span>
+          <span class="tx-badge ${o.optType}">${o.optType==='call'?'CALL':'PUT'}</span>
+          <span class="tx-badge ${o.action}">${o.action==='buy'?'買入':'賣出'}</span>
+        </div>
+        <div class="tx-meta">${o.date} · ${o.account} · 行使價 ${fmtUSD(o.strike)} · 到期 ${o.expiry}${(o.fee||o.interest) ? ` · 手續費 ${fmtUSD(o.fee)} · 利息 ${fmtUSD(o.interest)}` : ''}</div>
+      </div>
+      <div class="tx-right">
+        <div class="amt mono">${fmtUSD(o.netTotal)}</div>
+        <div class="qp mono">${o.contracts} 張 @ ${fmtUSD(o.premium)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderCashflowPage(cashflow){
+  document.getElementById('cfCount').textContent = cashflow.length + ' 筆紀錄';
+
+  const totalIn = cashflow.filter(c=>c.type==='deposit').reduce((s,c)=>s+c.amount,0);
+  const totalOut = cashflow.filter(c=>c.type==='withdraw').reduce((s,c)=>s+c.amount,0);
+  document.getElementById('cfIn').textContent = fmtUSD(totalIn);
+  document.getElementById('cfInHKD').textContent = fmtHKD(totalIn);
+  document.getElementById('cfOut').textContent = fmtUSD(totalOut);
+  document.getElementById('cfOutHKD').textContent = fmtHKD(totalOut);
+  const net = totalIn - totalOut;
+  document.getElementById('cfNet').textContent = (net>=0?'+':'') + fmtUSD(net);
+  document.getElementById('cfNet').style.color = net>=0 ? 'var(--gain)' : 'var(--loss)';
+  document.getElementById('cfNetHKD').textContent = (net>=0?'+':'') + fmtHKD(net);
+
+  const accounts = [...new Set(cashflow.map(c=>c.account))];
+  const years = [...new Set(cashflow.map(c=>c.date.slice(0,4)))].sort().reverse();
+  const accWrap = document.getElementById('cfAccountFilters');
+  accWrap.innerHTML = `<button class="filter-chip ${cfFilter.account==='__all__'?'active':''}" data-account="__all__">全部</button>` +
+    accounts.map(a => `<button class="filter-chip ${a===cfFilter.account?'active':''}" data-account="${a}">${a}</button>`).join('');
+  accWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { cfFilter.account = btn.dataset.account; renderCashflowPage(cashflow); };
+  });
+  const yearWrap = document.getElementById('cfYearFilters');
+  yearWrap.innerHTML = `<button class="filter-chip ${cfFilter.year==='__all__'?'active':''}" data-year="__all__">全部年度</button>` +
+    years.map(y => `<button class="filter-chip ${y===cfFilter.year?'active':''}" data-year="${y}">${y}</button>`).join('');
+  yearWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { cfFilter.year = btn.dataset.year; renderCashflowPage(cashflow); };
+  });
+
+  const filtered = cashflow.filter(c => (cfFilter.account==='__all__'||c.account===cfFilter.account) && (cfFilter.year==='__all__'||c.date.slice(0,4)===cfFilter.year));
+  const cfList = document.getElementById('cfList');
+  if(filtered.length === 0){
+    cfList.innerHTML = '<div class="empty-state">尚未連接入金/出金紀錄試算表,或沒有符合篩選條件的紀錄。</div>';
+    return;
+  }
+  cfList.innerHTML = filtered.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(c => `
+    <div class="tx-row">
+      <div class="tx-left">
+        <div class="tx-top">
+          <span class="tx-sym mono">${c.account}</span>
+          <span class="tx-badge ${c.type}">${c.type==='deposit'?'入金':'出金'}</span>
+        </div>
+        <div class="tx-meta">${c.date}</div>
+      </div>
+      <div class="tx-right">
+        <div class="amt mono">${c.type==='deposit'?'+':'-'}${fmtUSD(c.amount)}</div>
+        <div class="qp mono">${fmtHKD(c.amount)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderTransactionsPage(transactions){
+  document.getElementById('txCount').textContent = transactions.length + ' 筆交易';
+
+  const accounts = [...new Set(transactions.map(t=>t.account))];
+  const years = [...new Set(transactions.map(t=>t.date.slice(0,4)))].sort().reverse();
+  const accWrap = document.getElementById('accountFilters');
+  accWrap.innerHTML = `<button class="filter-chip ${txFilter.account==='__all__'?'active':''}" data-account="__all__">全部</button>` +
+    accounts.map(a => `<button class="filter-chip ${a===txFilter.account?'active':''}" data-account="${a}">${a}</button>`).join('');
+  accWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { txFilter.account = btn.dataset.account; renderTransactionsPage(transactions); };
+  });
+  const yearWrap = document.getElementById('txYearFilters');
+  yearWrap.innerHTML = `<button class="filter-chip ${txFilter.year==='__all__'?'active':''}" data-year="__all__">全部年度</button>` +
+    years.map(y => `<button class="filter-chip ${y===txFilter.year?'active':''}" data-year="${y}">${y}</button>`).join('');
+  yearWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { txFilter.year = btn.dataset.year; renderTransactionsPage(transactions); };
+  });
+
+  const filtered = transactions.filter(t => (txFilter.account==='__all__'||t.account===txFilter.account) && (txFilter.year==='__all__'||t.date.slice(0,4)===txFilter.year));
+  const txList = document.getElementById('txList');
+  if(filtered.length === 0){
+    txList.innerHTML = '<div class="empty-state">尚未連接交易紀錄試算表,或沒有符合篩選條件的紀錄。</div>';
+    return;
+  }
+  txList.innerHTML = filtered.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(t => `
+    <div class="tx-row">
+      <div class="tx-left">
+        <div class="tx-top">
+          <span class="tx-sym mono">${t.ticker}</span>
+          <span class="tx-badge ${t.action}">${t.action==='buy'?'買入':t.action==='sell'?'賣出':'利息'}</span>
+        </div>
+        <div class="tx-meta">${t.date} · ${t.account}${(t.action!=='interest' && (t.fee||t.interest)) ? ` · 手續費 ${fmtUSD(t.fee)} · 利息 ${fmtUSD(t.interest)}` : ''}</div>
+      </div>
+      <div class="tx-right">
+        <div class="amt mono">${t.action==='interest' ? '-'+fmtUSD(t.interest) : fmtUSD(t.netTotal)}</div>
+        <div class="qp mono">${t.action==='interest' ? t.shares + ' 股持倉利息' : t.shares + ' 股 @ ' + fmtUSD(t.price)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderDividendsPage(dividends){
+  document.getElementById('divCount').textContent = dividends.length + ' 筆紀錄';
+
+  const totalGross = dividends.reduce((s,d)=>s+d.gross,0);
+  const totalTax = dividends.reduce((s,d)=>s+d.tax,0);
+  const totalNet = dividends.reduce((s,d)=>s+d.net,0);
+  document.getElementById('divGross').textContent = fmtUSD(totalGross);
+  document.getElementById('divGrossHKD').textContent = fmtHKD(totalGross);
+  document.getElementById('divTax').textContent = fmtUSD(totalTax);
+  document.getElementById('divTaxHKD').textContent = fmtHKD(totalTax);
+  document.getElementById('divNet').textContent = fmtUSD(totalNet);
+  document.getElementById('divNetHKD').textContent = fmtHKD(totalNet);
+
+  const accounts = [...new Set(dividends.map(d=>d.account))];
+  const years = [...new Set(dividends.map(d=>d.date.slice(0,4)))].sort().reverse();
+  const accWrap = document.getElementById('divAccountFilters');
+  accWrap.innerHTML = `<button class="filter-chip ${divFilter.account==='__all__'?'active':''}" data-account="__all__">全部</button>` +
+    accounts.map(a => `<button class="filter-chip ${a===divFilter.account?'active':''}" data-account="${a}">${a}</button>`).join('');
+  accWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { divFilter.account = btn.dataset.account; renderDividendsPage(dividends); };
+  });
+  const yearWrap = document.getElementById('divYearFilters');
+  yearWrap.innerHTML = `<button class="filter-chip ${divFilter.year==='__all__'?'active':''}" data-year="__all__">全部年度</button>` +
+    years.map(y => `<button class="filter-chip ${y===divFilter.year?'active':''}" data-year="${y}">${y}</button>`).join('');
+  yearWrap.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.onclick = () => { divFilter.year = btn.dataset.year; renderDividendsPage(dividends); };
+  });
+
+  const filtered = dividends.filter(d => (divFilter.account==='__all__'||d.account===divFilter.account) && (divFilter.year==='__all__'||d.date.slice(0,4)===divFilter.year));
+  const divList = document.getElementById('divList');
+  if(filtered.length === 0){
+    divList.innerHTML = '<div class="empty-state">尚未連接配息/利息收入試算表,或沒有符合篩選條件的紀錄。</div>';
+    return;
+  }
+  divList.innerHTML = filtered.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(d => `
+    <div class="tx-row">
+      <div class="tx-left">
+        <div class="tx-top">
+          <span class="tx-sym mono">${d.ticker}</span>
+        </div>
+        <div class="tx-meta">${d.date} · ${d.account} · 毛額 ${fmtUSD(d.gross)} · 預扣稅 ${fmtUSD(d.tax)}</div>
+      </div>
+      <div class="tx-right">
+        <div class="amt mono">+${fmtUSD(d.net)}</div>
+        <div class="qp mono">${fmtHKD(d.net)}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function storageGet(key){
+  if (window.storage) {
+    try { return await window.storage.get(key, false); } catch(e){ return null; }
+  }
+  try {
+    const val = localStorage.getItem(key);
+    return val !== null ? { value: val } : null;
+  } catch(e){ return null; }
+}
+
+async function storageSet(key, value){
+  if (window.storage) {
+    try { return await window.storage.set(key, value, false); } catch(e){ return null; }
+  }
+  try { localStorage.setItem(key, value); return true; } catch(e){ return null; }
+}
+
+function fetchRows(url){
+  // Apps Script 網址(script.google.com)用 JSONP,避開 CORS;其餘(Google Sheets CSV 連結)照舊用 PapaParse 下載解析。
+  if (url.indexOf('script.google.com') !== -1) {
+    return fetchJSONP(url);
+  }
+  return fetchCSV(url);
+}
+
+function fetchCSV(url){
+  return new Promise((resolve, reject)=>{
+    Papa.parse(url, { download:true, header:true, skipEmptyLines:true, complete:(res)=>resolve(res.data), error:(err)=>reject(err) });
+  });
+}
+
+function fetchJSONP(url){
+  return new Promise((resolve, reject)=>{
+    const callbackName = 'jsonp_cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    let timeoutId;
+    function cleanup(){
+      clearTimeout(timeoutId);
+      delete window[callbackName];
+      script.remove();
+    }
+    window[callbackName] = (data) => { resolve(data); cleanup(); };
+    script.onerror = () => { reject(new Error('JSONP load failed')); cleanup(); };
+    timeoutId = setTimeout(() => { reject(new Error('JSONP timeout')); cleanup(); }, 15000);
+    const sep = url.indexOf('?') !== -1 ? '&' : '?';
+    script.src = url + sep + 'callback=' + callbackName;
+    document.head.appendChild(script);
+  });
+}
+
+async function connectSheet(){
+  const holdingsUrl = document.getElementById('holdingsUrl').value.trim();
+  const transactionsUrl = document.getElementById('transactionsUrl').value.trim();
+  const historyUrl = document.getElementById('historyUrl').value.trim();
+  const optionsUrl = document.getElementById('optionsUrl').value.trim();
+  const cashflowUrl = document.getElementById('cashflowUrl').value.trim();
+  const allocSnapshotsUrl = document.getElementById('allocSnapshotsUrl').value.trim();
+  const dividendsUrl = document.getElementById('dividendsUrl').value.trim();
+  const status = document.getElementById('statusMsg');
+  status.className = 'status-msg';
+  status.textContent = '讀取中…';
+
+  if(!holdingsUrl){
+    status.className = 'status-msg err';
+    status.textContent = '請先貼上持股試算表的 CSV 網址。';
+    return;
+  }
+
+  try{
+    const rawHoldings = await fetchRows(holdingsUrl);
+    const holdings = normalizeHoldings(rawHoldings);
+    if(holdings.length === 0){
+      status.className = 'status-msg err';
+      status.textContent = '讀到資料但欄位對不上,請確認欄位名稱(Ticker / Account / Nature / Shares / CostPerShare / CurrentPrice)。';
+      return;
+    }
+    let transactions = [];
+    if(transactionsUrl){
+      const rawTx = await fetchRows(transactionsUrl);
+      transactions = normalizeTransactions(rawTx);
+    }
+    let history = [];
+    if(historyUrl){
+      const rawHistory = await fetchRows(historyUrl);
+      history = normalizeHistory(rawHistory);
+    }
+    let options = [];
+    if(optionsUrl){
+      const rawOptions = await fetchRows(optionsUrl);
+      options = normalizeOptions(rawOptions);
+    }
+    let cashflow = [];
+    if(cashflowUrl){
+      const rawCashflow = await fetchRows(cashflowUrl);
+      cashflow = normalizeCashflow(rawCashflow);
+    }
+    let allocSnapshots = [];
+    if(allocSnapshotsUrl){
+      const rawSnapshots = await fetchRows(allocSnapshotsUrl);
+      allocSnapshots = normalizeAllocSnapshots(rawSnapshots);
+    }
+    let dividends = [];
+    if(dividendsUrl){
+      const rawDividends = await fetchRows(dividendsUrl);
+      dividends = normalizeInterestIncome(rawDividends);
+    }
+    render(holdings, transactions, history, options, cashflow, allocSnapshots, dividends);
+    status.className = 'status-msg ok';
+    status.textContent = `已連接,讀到 ${holdings.length} 檔持股、${transactions.length} 筆交易。`;
+
+    try{ await storageSet('sheet-config', JSON.stringify({holdingsUrl, transactionsUrl, historyUrl, optionsUrl, cashflowUrl, allocSnapshotsUrl, dividendsUrl})); }catch(e){}
+
+  }catch(err){
+    status.className = 'status-msg err';
+    status.textContent = '讀取失敗。請確認網址是「發布到網路」的 CSV 連結,且該分頁權限允許任何人檢視。';
+  }
+}
+
+function loadDemo(){
+  const demoHoldings = [
+    {Ticker:'VOO', Account:'IB', Nature:'ETF', Region:'US', Sector:'大盤指數', Shares:'12', CostPerShare:'410', CurrentPrice:'512'},
+    {Ticker:'AAPL', Account:'IB', Nature:'股票', Region:'US', Sector:'科技', Shares:'20', CostPerShare:'155', CurrentPrice:'228'},
+    {Ticker:'QQQ', Account:'FUTU', Nature:'ETF', Region:'US', Sector:'科技', Shares:'8', CostPerShare:'380', CurrentPrice:'498'},
+    {Ticker:'NVDA', Account:'FUTU', Nature:'股票', Region:'US', Sector:'科技', Shares:'15', CostPerShare:'62', CurrentPrice:'138'},
+    {Ticker:'SCHD', Account:'HSBC', Nature:'ETF', Region:'US', Sector:'股息', Shares:'40', CostPerShare:'26', CurrentPrice:'28.4'},
+    {Ticker:'MSFT', Account:'SC', Nature:'股票', Region:'US', Sector:'科技', Shares:'10', CostPerShare:'340', CurrentPrice:'421'},
+    {Ticker:'0700.HK', Account:'FUTU', Nature:'股票', Region:'HK', Sector:'科技', Shares:'100', CostPerShare:'320', CurrentPrice:'398'},
+    {Ticker:'2800.HK', Account:'HSBC', Nature:'ETF', Region:'HK', Sector:'大盤指數', Shares:'500', CostPerShare:'19.5', CurrentPrice:'21.2'},
+    {Ticker:'SGOV', Account:'IB', Nature:'ETF', Region:'US', Sector:'貨幣市場', Shares:'200', CostPerShare:'100.2', CurrentPrice:'100.4', InterestRate:'5.1', InterestFrequency:'每月'},
+  ];
+  const demoTx = [
+    {Date:'2026-07-02', Account:'IB', Ticker:'AAPL', Action:'Buy', Shares:'10', Price:'150', Fee:'1.5'},
+    {Date:'2026-07-15', Account:'IB', Ticker:'AAPL', Action:'Buy', Shares:'10', Price:'160', Fee:'1.5'},
+    {Date:'2026-06-20', Account:'FUTU', Ticker:'NVDA', Action:'Buy', Shares:'15', Price:'62', Fee:'2'},
+    {Date:'2026-05-11', Account:'HSBC', Ticker:'SCHD', Action:'Buy', Shares:'40', Price:'26', Fee:'0'},
+    {Date:'2026-08-01', Account:'SC', Ticker:'MSFT', Action:'Buy', Shares:'10', Price:'340', Fee:'1.2'},
+    {Date:'2026-04-18', Account:'IB', Ticker:'VOO', Action:'Sell', Shares:'3', Price:'470', Fee:'1.5'},
+    {Date:'2026-03-10', Account:'FUTU', Ticker:'0700.HK', Action:'Buy', Shares:'100', Price:'320', Fee:'8', Interest:'12'},
+    {Date:'2025-02-22', Account:'HSBC', Ticker:'2800.HK', Action:'Buy', Shares:'500', Price:'19.5', Fee:'5'},
+  ];
+  const demoOptions = [
+    {Date:'2026-07-05', Account:'IB', Ticker:'AAPL', OptionType:'Call', Action:'Sell', Strike:'240', Expiry:'2026-09-18', Contracts:'2', Premium:'3.2', Fee:'1.3'},
+    {Date:'2025-06-28', Account:'FUTU', Ticker:'NVDA', OptionType:'Put', Action:'Buy', Strike:'130', Expiry:'2026-10-16', Contracts:'1', Premium:'4.5', Fee:'0.65'},
+  ];
+  const demoCashflow = [
+    {Date:'2026-01-05', Account:'IB', Type:'Deposit', Amount:'10000'},
+    {Date:'2026-02-14', Account:'FUTU', Type:'Deposit', Amount:'8000'},
+    {Date:'2026-03-20', Account:'HSBC', Type:'Deposit', Amount:'12000'},
+    {Date:'2026-04-02', Account:'SC', Type:'Deposit', Amount:'5000'},
+    {Date:'2026-06-11', Account:'IB', Type:'Withdrawal', Amount:'2000'},
+    {Date:'2026-07-30', Account:'FUTU', Type:'Deposit', Amount:'3000'},
+  ];
+  const demoHistory = [
+    {Date:'2026-02', TotalValue:'28000'}, {Date:'2026-03', TotalValue:'29500'},
+    {Date:'2026-04', TotalValue:'27800'}, {Date:'2026-05', TotalValue:'31200'},
+    {Date:'2026-06', TotalValue:'33600'}, {Date:'2026-07', TotalValue:'35100'},
+    {Date:'2026-08', TotalValue:'36400'},
+  ];
+  const demoDividends = [
+    {Date:'2026-03-26', Ticker:'META', Account:'SC', 'Cash dividend':4.2, 'NRA tax adj':-1.26},
+    {Date:'2026-03-31', Ticker:'VOO', Account:'SC', 'Cash dividend':58.04, 'NRA tax adj':-17.41},
+    {Date:'2026-04-01', Ticker:'NVDA', Account:'SC', 'Cash dividend':0.3, 'NRA tax adj':-0.09},
+  ];
+  render(normalizeHoldings(demoHoldings), normalizeTransactions(demoTx), normalizeHistory(demoHistory), normalizeOptions(demoOptions), normalizeCashflow(demoCashflow), [], normalizeInterestIncome(demoDividends));
+  document.getElementById('statusMsg').className = 'status-msg ok';
+  document.getElementById('statusMsg').textContent = '目前顯示示範資料。';
+}
+
+document.getElementById('breakdownTabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  document.querySelectorAll('#breakdownTabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentBreakdown = btn.dataset.key;
+  renderAllocation();
+});
+
+document.getElementById('allocDateSelect').addEventListener('change', (e)=>{
+  currentAllocDate = e.target.value;
+  renderAllocation();
+});
+
+document.querySelectorAll('.nav-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-' + btn.dataset.page).classList.add('active');
+  });
+});
+
+async function init(){
+  await fetchRate();
+  try{
+    const saved = await storageGet('sheet-config');
+    if(saved && saved.value){
+      const cfg = JSON.parse(saved.value);
+      document.getElementById('holdingsUrl').value = cfg.holdingsUrl || '';
+      document.getElementById('transactionsUrl').value = cfg.transactionsUrl || '';
+      document.getElementById('historyUrl').value = cfg.historyUrl || '';
+      document.getElementById('optionsUrl').value = cfg.optionsUrl || '';
+      document.getElementById('cashflowUrl').value = cfg.cashflowUrl || '';
+      document.getElementById('allocSnapshotsUrl').value = cfg.allocSnapshotsUrl || '';
+      document.getElementById('dividendsUrl').value = cfg.dividendsUrl || '';
+      if(cfg.holdingsUrl){ await connectSheet(); return; }
+    }
+  }catch(e){}
+  loadDemo();
+}
+init();
+</script>
+</body>
+</html>
