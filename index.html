@@ -974,11 +974,37 @@ async function storageSet(key, value){
 }
 
 function fetchRows(url){
-  // Apps Script 網址(script.google.com)用 JSONP,避開 CORS;其餘(Google Sheets CSV 連結)照舊用 PapaParse 下載解析。
+  // Apps Script 網址(script.google.com):先試標準 fetch()(能看到真正的 CORS 錯誤訊息),失敗才退回 JSONP。
+  // 其餘(Google Sheets CSV 連結)照舊用 PapaParse 下載解析。
   if (url.indexOf('script.google.com') !== -1) {
-    return fetchJSONP(url);
+    return fetchAppsScriptData(url);
   }
   return fetchCSV(url);
+}
+
+async function fetchAppsScriptData(url){
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
+    return parsed.data;
+  }catch(fetchErr){
+    console.warn('標準 fetch 失敗,改試 JSONP:', fetchErr);
+    try{
+      return await fetchJSONP(url);
+    }catch(jsonpErr){
+      throw new Error(`fetch 失敗(${fetchErr.message})且 JSONP 也失敗(${jsonpErr.message})`);
+    }
+  }
+}
+
+async function fetchLabeled(url, label){
+  try{
+    return await fetchRows(url);
+  }catch(e){
+    throw new Error(`[${label}] ${e.message} — 網址:${url}`);
+  }
 }
 
 function fetchCSV(url){
@@ -1025,7 +1051,7 @@ async function connectSheet(){
   }
 
   try{
-    const rawHoldings = await fetchRows(holdingsUrl);
+    const rawHoldings = await fetchLabeled(holdingsUrl, 'Holdings');
     const holdings = normalizeHoldings(rawHoldings);
     if(holdings.length === 0){
       status.className = 'status-msg err';
@@ -1034,32 +1060,32 @@ async function connectSheet(){
     }
     let transactions = [];
     if(transactionsUrl){
-      const rawTx = await fetchRows(transactionsUrl);
+      const rawTx = await fetchLabeled(transactionsUrl, 'Transactions');
       transactions = normalizeTransactions(rawTx);
     }
     let history = [];
     if(historyUrl){
-      const rawHistory = await fetchRows(historyUrl);
+      const rawHistory = await fetchLabeled(historyUrl, 'History');
       history = normalizeHistory(rawHistory);
     }
     let options = [];
     if(optionsUrl){
-      const rawOptions = await fetchRows(optionsUrl);
+      const rawOptions = await fetchLabeled(optionsUrl, 'Options');
       options = normalizeOptions(rawOptions);
     }
     let cashflow = [];
     if(cashflowUrl){
-      const rawCashflow = await fetchRows(cashflowUrl);
+      const rawCashflow = await fetchLabeled(cashflowUrl, 'Cashflow');
       cashflow = normalizeCashflow(rawCashflow);
     }
     let allocSnapshots = [];
     if(allocSnapshotsUrl){
-      const rawSnapshots = await fetchRows(allocSnapshotsUrl);
+      const rawSnapshots = await fetchLabeled(allocSnapshotsUrl, 'AllocSnapshots');
       allocSnapshots = normalizeAllocSnapshots(rawSnapshots);
     }
     let dividends = [];
     if(dividendsUrl){
-      const rawDividends = await fetchRows(dividendsUrl);
+      const rawDividends = await fetchLabeled(dividendsUrl, 'Dividends');
       dividends = normalizeInterestIncome(rawDividends);
     }
     render(holdings, transactions, history, options, cashflow, allocSnapshots, dividends);
