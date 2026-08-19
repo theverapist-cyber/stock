@@ -56,9 +56,11 @@
   .year-chip{
     font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border-radius:999px;
     background:var(--surface-raised); border:1px solid var(--hairline); color:var(--muted);
+    cursor:pointer; user-select:none;
   }
   .year-chip.up{color:var(--gain); border-color:rgba(79,214,156,0.3);}
   .year-chip.down{color:var(--loss); border-color:rgba(255,107,107,0.3);}
+  .year-chip.selected{background:var(--gold); color:#221807; border-color:var(--gold);}
 
   .alloc-date-select{
     width:100%; background:var(--ink); border:1px solid var(--hairline); border-radius:8px;
@@ -482,6 +484,8 @@ let optFilter = { account: '__all__', year: '__all__' };
 let cfFilter = { account: '__all__', year: '__all__' };
 let divFilter = { account: '__all__', year: '__all__' };
 let expandedTickers = new Set();
+let selectedReturnPeriod = '__all__';
+let currentTotalGainPct = 0;
 
 const fmtUSD = (n) => '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits: 2});
 const fmtHKD = (n) => 'HK$' + Number(n*USD_HKD).toLocaleString('en-US', {maximumFractionDigits: 0});
@@ -774,9 +778,34 @@ function computeYearlyReturns(history){
 
 function renderYearlyReturns(history){
   const wrap = document.getElementById('yearlyReturns');
-  if(!history || history.length === 0){ wrap.innerHTML = ''; return; }
-  const yearly = computeYearlyReturns(history);
-  wrap.innerHTML = yearly.map(y => `<span class="year-chip mono ${y.pct>=0?'up':'down'}">${y.year} ${fmtPct(y.pct)}</span>`).join('');
+  const yearly = (history && history.length > 0) ? computeYearlyReturns(history) : [];
+
+  const allChip = `<span class="year-chip mono ${selectedReturnPeriod==='__all__'?'selected':''}" data-period="__all__">全部</span>`;
+  const yearChips = yearly.map(y => `<span class="year-chip mono ${selectedReturnPeriod===y.year?'selected':(y.pct>=0?'up':'down')}" data-period="${y.year}">${y.year} ${fmtPct(y.pct)}</span>`).join('');
+  wrap.innerHTML = yearly.length > 0 ? (allChip + yearChips) : '';
+
+  wrap.querySelectorAll('.year-chip').forEach(el => {
+    el.onclick = () => {
+      selectedReturnPeriod = el.dataset.period;
+      updateDeltaChip(yearly);
+      renderYearlyReturns(history);
+    };
+  });
+
+  updateDeltaChip(yearly);
+}
+
+function updateDeltaChip(yearly){
+  const chip = document.getElementById('deltaChip');
+  if(selectedReturnPeriod === '__all__'){
+    chip.className = 'delta-chip mono ' + (currentTotalGainPct>=0?'up':'down');
+    chip.textContent = (currentTotalGainPct>=0?'▲ ':'▼ ') + fmtPct(currentTotalGainPct) + ' 全部持有期間';
+  } else {
+    const y = yearly.find(x=>x.year===selectedReturnPeriod);
+    const pct = y ? y.pct : 0;
+    chip.className = 'delta-chip mono ' + (pct>=0?'up':'down');
+    chip.textContent = (pct>=0?'▲ ':'▼ ') + fmtPct(pct) + ' ' + selectedReturnPeriod + ' 年度';
+  }
 }
 
 function render(holdings, transactions, history, options, cashflow, allocSnapshots, dividends){
@@ -809,10 +838,7 @@ function render(holdings, transactions, history, options, cashflow, allocSnapsho
   document.getElementById('totalGainPct').style.color = totalGainPct>=0 ? 'var(--gain)' : 'var(--loss)';
   document.getElementById('holdingCount').textContent = holdings.length + ' 檔';
 
-  const chip = document.getElementById('deltaChip');
-  chip.className = 'delta-chip mono ' + (totalGain>=0?'up':'down');
-  chip.textContent = (totalGain>=0?'▲ ':'▼ ') + fmtPct(totalGainPct) + ' 全部持有期間';
-
+  currentTotalGainPct = totalGainPct;
   renderYearlyReturns(history);
 
   renderLedger(holdings);
