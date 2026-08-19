@@ -93,10 +93,25 @@
   .legend-pct{font-size:13px; font-weight:600; margin-right:10px;}
   .legend-val{font-size:11.5px; color:var(--muted); text-align:right; line-height:1.5;}
 
-  .holding-row{display:flex; justify-content:space-between; align-items:center; padding:14px 4px; border-bottom:1px solid var(--hairline);}
+  .holding-row{display:flex; justify-content:space-between; align-items:center; padding:14px 4px; border-bottom:1px solid var(--hairline); cursor:default;}
+  .holding-row.expandable{cursor:pointer;}
   .holding-row:last-child{border-bottom:none;}
   .h-left .sym-row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
   .h-left .sym{font-weight:600; font-size:15px;}
+  .expand-chevron{width:13px; height:13px; color:var(--muted); transition:transform 0.15s ease; flex-shrink:0;}
+  .expand-chevron.open{transform:rotate(90deg);}
+  .holding-subrows{max-height:0; overflow:hidden; transition:max-height 0.2s ease;}
+  .holding-subrows.open{max-height:600px;}
+  .holding-subrow{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 4px 9px 20px; border-bottom:1px solid var(--hairline);
+    background:var(--surface-raised);
+  }
+  .holding-subrow:last-child{border-bottom:1px solid var(--hairline);}
+  .holding-subrow .sub-account{font-size:12.5px; color:var(--text); font-weight:600;}
+  .holding-subrow .sub-detail{font-size:11px; color:var(--muted); margin-top:2px;}
+  .holding-subrow .sub-val{font-size:12.5px; font-weight:600;}
+  .holding-subrow .sub-pct{font-size:11px; margin-top:1px;}
   .badge-nature{
     font-size:10px; padding:2px 7px; border-radius:5px; background:var(--surface-raised);
     color:var(--muted); border:1px solid var(--hairline); font-weight:600; letter-spacing:.02em;
@@ -281,7 +296,7 @@
           持股表欄位:<code>Ticker</code> 代號、<code>Account</code> 帳戶、<code>Nature</code> 性質(股票/ETF)、<code>Sector</code> 板塊(如科技/金融/消費)、<code>Region</code> 地區(如 US/HK/CN)、<code>Shares</code> 股數、<code>CostPerShare</code> 平均成本、<code>CurrentPrice</code> 目前股價(建議用 <code>=GOOGLEFINANCE(A2)</code> 自動抓)、<code>InterestRate</code> 利率(選填,如債券/貨幣基金,填數字如 4.5)、<code>InterestFrequency</code> 派息頻率(選填,如「每月」「每季」)。<br>
           交易紀錄欄位:<code>Date</code>、<code>Account</code>、<code>Ticker</code>、<code>Action</code>(Buy/Sell/Interest)、<code>Shares</code>、<code>Price</code>、<code>Fee</code> 手續費(選填)、<code>Interest</code> 利息(選填)。<code>Action</code> 填 Interest 時代表單純的持倉利息扣款,不算買賣。<br>
           期權紀錄欄位:<code>Date</code>、<code>Account</code>、<code>Ticker</code>、<code>OptionType</code>(Call/Put)、<code>Action</code>(Buy/Sell)、<code>Strike</code>、<code>Expiry</code>、<code>Contracts</code>、<code>Premium</code>(每股權利金,系統會 ×100 股/張計算)、<code>Fee</code>、<code>Interest</code>(選填)。<br>
-          入金/出金欄位:<code>Date</code>、<code>Account</code>、<code>Type</code>(Deposit/Withdrawal)、<code>Amount</code>。<br>
+          入金/出金欄位:<code>Date</code>、<code>Account</code>、<code>Type</code>(Deposit/Withdrawal)、<code>Amount</code>、<code>Currency</code>(USD 或 HKD,選填,留空預設 USD)。<br>
           資產配置歷史快照欄位:跟持股表一樣,但多一個 <code>Date</code> 欄,每個日期重複記一次全部持股,即可在「資產配置」回看該日的組合。<br>
           配息/利息收入欄位:<code>Date</code>、<code>Ticker</code>、<code>Account</code>、<code>Cash dividend</code> 股息毛額、<code>NRA tax adj</code> 預扣稅調整(通常是負數)。淨收入 = 毛額 + 稅務調整。<br>
           金額預設以美元輸入,HKD 為即時匯率換算顯示。發布方式:檔案→共用→發布到網路→選工作表→格式 CSV。
@@ -466,6 +481,7 @@ let txFilter = { account: '__all__', year: '__all__' };
 let optFilter = { account: '__all__', year: '__all__' };
 let cfFilter = { account: '__all__', year: '__all__' };
 let divFilter = { account: '__all__', year: '__all__' };
+let expandedTickers = new Set();
 
 const fmtUSD = (n) => '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits: 2});
 const fmtHKD = (n) => 'HK$' + Number(n*USD_HKD).toLocaleString('en-US', {maximumFractionDigits: 0});
@@ -608,11 +624,83 @@ function normalizeCashflow(rows){
     const date = pickCol(r, ['date','日期']);
     const account = pickCol(r, ['account','帳戶','户口','账户']) || '未分類帳戶';
     const type = (pickCol(r, ['type','類型','種類']) || '').toString().trim().toLowerCase();
-    const amount = parseFloat(pickCol(r, ['amount','金額']));
-    if(!date || isNaN(amount)) return null;
+    const currency = (pickCol(r, ['currency','幣別','貨幣']) || 'USD').toString().trim().toUpperCase();
+    const rawAmount = parseFloat(pickCol(r, ['amount','金額']));
+    if(!date || isNaN(rawAmount)) return null;
     const isDeposit = type.startsWith('d') || type.includes('入');
-    return { date:String(date).trim(), account:String(account).trim(), type: isDeposit?'deposit':'withdraw', amount };
+    // 內部一律換算成美元計算,個別紀錄仍保留原始輸入幣別供顯示
+    const amount = currency === 'HKD' ? rawAmount / USD_HKD : rawAmount;
+    return { date:String(date).trim(), account:String(account).trim(), type: isDeposit?'deposit':'withdraw', amount, currency, rawAmount };
   }).filter(Boolean);
+}
+
+function groupHoldingsByTicker(holdings){
+  const map = {};
+  holdings.forEach(h => {
+    if(!map[h.ticker]){
+      map[h.ticker] = { ticker:h.ticker, nature:h.nature, region:h.region, interestRate:h.interestRate, interestFrequency:h.interestFrequency, entries:[], shares:0, totalCost:0, marketValue:0 };
+    }
+    const g = map[h.ticker];
+    g.entries.push(h);
+    g.shares += h.shares;
+    g.totalCost += h.totalCost;
+    g.marketValue += h.marketValue;
+  });
+  return Object.values(map).map(g => {
+    const gain = g.marketValue - g.totalCost;
+    const gainPct = g.totalCost ? (gain/g.totalCost)*100 : 0;
+    const avgCost = g.shares ? g.totalCost/g.shares : 0;
+    return { ...g, gain, gainPct, avgCost };
+  }).sort((a,b)=>b.marketValue-a.marketValue);
+}
+
+function renderLedger(holdings){
+  const ledger = document.getElementById('ledger');
+  if(holdings.length === 0){
+    ledger.innerHTML = '<div class="empty-state">尚未連接資料。展開下方「連接 Google Sheet」設定你的試算表,或先看示範資料。</div>';
+    return;
+  }
+  const groups = groupHoldingsByTicker(holdings);
+  ledger.innerHTML = groups.map(g => {
+    const multi = g.entries.length > 1;
+    const isOpen = expandedTickers.has(g.ticker);
+    const subrows = multi ? g.entries.slice().sort((a,b)=>b.marketValue-a.marketValue).map(h => `
+      <div class="holding-subrow">
+        <div>
+          <div class="sub-account">${h.account}</div>
+          <div class="sub-detail">${h.shares} 股 · 均價 ${fmtUSD(h.cost||h.price)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="sub-val mono">${fmtUSD(h.marketValue)}</div>
+          <div class="sub-pct mono ${h.gainPct>=0?'up':'down'}">${fmtPct(h.gainPct)}</div>
+        </div>
+      </div>`).join('') : '';
+    return `
+      <div class="holding-row ${multi?'expandable':''}" ${multi?`data-ticker="${g.ticker}"`:''}>
+        <div class="h-left">
+          <div class="sym-row">
+            ${multi ? `<svg class="expand-chevron ${isOpen?'open':''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>` : ''}
+            <span class="sym mono">${g.ticker}</span><span class="badge-nature">${g.nature}</span><span class="badge-region">${g.region}</span>${g.interestRate ? `<span class="badge-interest">${g.interestRate}% · ${g.interestFrequency||'未註明頻率'}</span>` : ''}
+          </div>
+          <div class="sub">${multi ? `${g.entries.length} 個帳戶合計` : g.entries[0].account} · ${g.shares} 股 · 均價 ${fmtUSD(g.avgCost)}</div>
+        </div>
+        <div class="h-right">
+          <div class="val mono">${fmtUSD(g.marketValue)}</div>
+          <div class="val-sub mono">${fmtHKD(g.marketValue)}</div>
+          <div class="pct mono ${g.gainPct>=0?'up':'down'}">${fmtPct(g.gainPct)}</div>
+        </div>
+      </div>
+      ${multi ? `<div class="holding-subrows ${isOpen?'open':''}">${subrows}</div>` : ''}`;
+  }).join('');
+
+  ledger.querySelectorAll('.holding-row.expandable').forEach(row => {
+    row.onclick = () => {
+      const ticker = row.dataset.ticker;
+      if(expandedTickers.has(ticker)) expandedTickers.delete(ticker);
+      else expandedTickers.add(ticker);
+      renderLedger(holdings);
+    };
+  });
 }
 
 function groupHoldings(holdings, key){
@@ -727,23 +815,7 @@ function render(holdings, transactions, history, options, cashflow, allocSnapsho
 
   renderYearlyReturns(history);
 
-  const ledger = document.getElementById('ledger');
-  if(holdings.length === 0){
-    ledger.innerHTML = '<div class="empty-state">尚未連接資料。展開下方「連接 Google Sheet」設定你的試算表,或先看示範資料。</div>';
-  } else {
-    ledger.innerHTML = holdings.slice().sort((a,b)=>b.marketValue-a.marketValue).map(h => `
-      <div class="holding-row">
-        <div class="h-left">
-          <div class="sym-row"><span class="sym mono">${h.ticker}</span><span class="badge-nature">${h.nature}</span><span class="badge-region">${h.region}</span>${h.interestRate ? `<span class="badge-interest">${h.interestRate}% · ${h.interestFrequency||'未註明頻率'}</span>` : ''}</div>
-          <div class="sub">${h.account} · ${h.shares} 股 · 均價 ${fmtUSD(h.cost||h.price)}</div>
-        </div>
-        <div class="h-right">
-          <div class="val mono">${fmtUSD(h.marketValue)}</div>
-          <div class="val-sub mono">${fmtHKD(h.marketValue)}</div>
-          <div class="pct mono ${h.gainPct>=0?'up':'down'}">${fmtPct(h.gainPct)}</div>
-        </div>
-      </div>`).join('');
-  }
+  renderLedger(holdings);
 
   renderAllocation();
 
@@ -858,7 +930,7 @@ function renderCashflowPage(cashflow){
           <span class="tx-sym mono">${c.account}</span>
           <span class="tx-badge ${c.type}">${c.type==='deposit'?'入金':'出金'}</span>
         </div>
-        <div class="tx-meta">${c.date}</div>
+        <div class="tx-meta">${c.date}${c.currency==='HKD' ? ` · 原始輸入 HK$${c.rawAmount.toLocaleString('en-US')}` : ''}</div>
       </div>
       <div class="tx-right">
         <div class="amt mono">${c.type==='deposit'?'+':'-'}${fmtUSD(c.amount)}</div>
